@@ -51,8 +51,22 @@ export const usePigAI = () => {
     setPigs(newPigs);
   }, []);
 
+  const addPig = useCallback(() => {
+    setPigs(currentPigs => {
+      const newId = `pig-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newPig = createInitialPigState(newId);
+      return [...currentPigs, newPig];
+    });
+  }, []);
+
+  const removePig = useCallback((pigId: string) => {
+    setPigs(currentPigs => currentPigs.filter(pig => pig.id !== pigId));
+  }, []);
+
   return {
     pigs,
-    resetPigs
+    resetPigs,
+    addPig,
+    removePig
   };
 };

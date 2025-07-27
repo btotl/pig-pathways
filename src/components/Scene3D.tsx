@@ -3,8 +3,9 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stats } from '@react-three/drei';
 import { toast } from '../hooks/use-toast';
 import Lighting from './Lighting';
-import GrassField from './GrassField';
+import RealisticGrassField from './RealisticGrassField';
 import PigModel from './PigModel';
+import AdminPanel from './AdminPanel';
 import { usePigAI } from '../hooks/usePigAI';
 import { usePerformance } from '../hooks/usePerformance';
 import { SCENE_SETTINGS } from '../utils/constants';
@@ -14,19 +15,47 @@ interface Scene3DProps {
 }
 
 const Scene3D = ({ onLoaded }: Scene3DProps) => {
-  const { pigs, resetPigs } = usePigAI();
+  const { pigs, resetPigs, addPig, removePig } = usePigAI();
   const performance = usePerformance();
   const [selectedPig, setSelectedPig] = useState<string | null>(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
 
   const handlePigClick = (pigId: string) => {
-    setSelectedPig(pigId);
-    const pig = pigs.find(p => p.id === pigId);
-    if (pig) {
+    if (isAdminMode) {
+      // In admin mode, clicking removes the pig
+      removePig(pigId);
       toast({
-        title: `Pig ${pigId.split('-')[1]}`,
-        description: `Current state: ${pig.state}. Speed: ${pig.speed.toFixed(2)}`,
+        title: "Pig Removed",
+        description: `Pig ${pigId.split('-')[1]} has been removed`,
       });
+    } else {
+      // In user mode, show pig info
+      setSelectedPig(pigId);
+      const pig = pigs.find(p => p.id === pigId);
+      if (pig) {
+        toast({
+          title: `Pig ${pigId.split('-')[1]}`,
+          description: `Current state: ${pig.state}. Speed: ${pig.speed.toFixed(2)}`,
+        });
+      }
     }
+  };
+
+  const handleAddPig = () => {
+    addPig();
+    toast({
+      title: "Pig Added",
+      description: "A new pig has joined the field!",
+    });
+  };
+
+  const handleResetField = () => {
+    resetPigs();
+    toast({
+      title: "Field Reset",
+      description: "All pigs have been reset to their starting positions",
+    });
   };
 
   return (
@@ -50,7 +79,7 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
       >
         <Suspense fallback={null}>
           <Lighting />
-          <GrassField />
+          <RealisticGrassField />
           
           {pigs.map((pig) => (
             <PigModel
@@ -81,17 +110,35 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
 
       {/* Controls */}
       <div className="absolute bottom-4 left-4 space-y-2">
-        <button
-          onClick={resetPigs}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-soft hover:bg-primary/90 transition-colors"
-        >
-          Reset Pigs
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAdminPanel(!showAdminPanel)}
+            className={`px-4 py-2 rounded-lg shadow-soft transition-colors ${
+              showAdminPanel 
+                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' 
+                : 'bg-primary text-primary-foreground hover:bg-primary/90'
+            }`}
+          >
+            {showAdminPanel ? 'Hide Admin' : 'Admin'}
+          </button>
+          
+          <button
+            onClick={resetPigs}
+            className="bg-secondary text-secondary-foreground px-4 py-2 rounded-lg shadow-soft hover:bg-secondary/90 transition-colors"
+          >
+            Reset Pigs
+          </button>
+        </div>
         
         <div className="text-sm text-muted-foreground bg-card/80 backdrop-blur-sm px-3 py-2 rounded-lg">
           <div>FPS: {performance.fps}</div>
           <div>Quality: {performance.quality}</div>
           <div>Pigs: {pigs.length}</div>
+          {showAdminPanel && (
+            <div className="text-destructive text-xs mt-1">
+              Admin Mode Active
+            </div>
+          )}
         </div>
       </div>
 
@@ -103,6 +150,12 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
           <li>• Scroll to zoom in/out</li>
           <li>• Click on pigs to see their status</li>
           <li>• Watch them wander autonomously!</li>
+          {showAdminPanel && (
+            <>
+              <li className="text-destructive">• Admin mode: Click pigs to remove</li>
+              <li className="text-destructive">• Use admin panel to manage field</li>
+            </>
+          )}
         </ul>
       </div>
 
@@ -126,6 +179,17 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
           </button>
         </div>
       )}
+
+      {/* Admin Panel */}
+      <AdminPanel
+        isVisible={showAdminPanel}
+        onToggleVisibility={() => setShowAdminPanel(!showAdminPanel)}
+        pigCount={pigs.length}
+        onAddPig={handleAddPig}
+        onRemovePig={removePig}
+        onResetField={handleResetField}
+        pigs={pigs}
+      />
     </div>
   );
 };
