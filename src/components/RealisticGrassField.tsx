@@ -56,17 +56,17 @@ const RealisticGrassField = () => {
     varying vec3 vColor;
 
     void main() {
-      float contrast = 1.5;
-      float brightness = 0.1;
+      float contrast = 0.8;
+      float brightness = -0.1;
       
       // Base grass color - use green if no texture
-      vec3 grassColor = vec3(0.2, 0.6, 0.3);
+      vec3 grassColor = vec3(0.15, 0.4, 0.2);
       vec3 color = grassColor * contrast;
       color = color + vec3(brightness, brightness, brightness);
       
       // Add some cloud-like variation
-      vec3 cloudColor = vec3(0.8, 0.9, 0.7);
-      color = mix(color, cloudColor, 0.2 * sin(cloudUV.x * 5.0) * sin(cloudUV.y * 5.0));
+      vec3 cloudColor = vec3(0.2, 0.5, 0.25);
+      color = mix(color, cloudColor, 0.1 * sin(cloudUV.x * 5.0) * sin(cloudUV.y * 5.0));
       
       gl_FragColor = vec4(color, 1.0);
     }
