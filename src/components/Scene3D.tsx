@@ -1,13 +1,15 @@
 import { Suspense, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stats } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { toast } from '../hooks/use-toast';
 import Lighting from './Lighting';
-import RealisticGrassField from './RealisticGrassField';
+import LipsGrassField from './LipsGrassField';
 import PigModel from './PigModel';
-import AdminPanel from './AdminPanel';
+import PlacedModelComponent from './PlacedModelComponent';
+import AdvancedAdminPanel from './AdvancedAdminPanel';
 import { usePigAI } from '../hooks/usePigAI';
 import { usePerformance } from '../hooks/usePerformance';
+import { useAdminSystem } from '../hooks/useAdminSystem';
 import { SCENE_SETTINGS } from '../utils/constants';
 
 interface Scene3DProps {
@@ -15,11 +17,29 @@ interface Scene3DProps {
 }
 
 const Scene3D = ({ onLoaded }: Scene3DProps) => {
-  const { pigs, resetPigs, addPig, removePig } = usePigAI();
+  const {
+    adminSettings,
+    placedModels,
+    urlAssignments,
+    updateAdminSettings,
+    addPlacedModel,
+    updatePlacedModel,
+    removePlacedModel,
+    assignUrl,
+    removeUrlAssignment,
+    getVisibleModels,
+    getFoodModels
+  } = useAdminSystem();
+
+  const { pigs, resetPigs, addPig, removePig, updatePigUrl } = usePigAI(
+    getVisibleModels(),
+    getFoodModels(),
+    adminSettings.defaultPigSize,
+    adminSettings.pigSpeedMultiplier
+  );
+  
   const performance = usePerformance();
   const [selectedPig, setSelectedPig] = useState<string | null>(null);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(false);
 
   const handlePigClick = (pigId: string) => {
     if (isAdminMode) {
@@ -59,9 +79,13 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
   };
 
   return (
-    <div className="relative w-full h-screen bg-gradient-sky">
+    <div className="relative w-full h-screen" style={{
+      background: adminSettings.environment.skyImage ? 
+        `url(${adminSettings.environment.skyImage}) center/cover` : 
+        'linear-gradient(135deg, #87ceeb 0%, #98fb98 100%)'
+    }}>
       <Canvas
-        shadows
+        shadows={adminSettings.environment.shadowsEnabled}
         camera={{
           position: [
             SCENE_SETTINGS.cameraPosition.x,
@@ -72,20 +96,33 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
           near: 0.1,
           far: 200
         }}
-        onCreated={() => {
-          // Scene is ready
-          setTimeout(onLoaded, 500);
+        onCreated={() => setTimeout(onLoaded, 500)}
+        onClick={(event) => {
+          // Handle model placement when admin mode and model selected
+          if (adminSettings.isAdminMode && event.point) {
+            // Implementation for model placement would go here
+          }
         }}
       >
         <Suspense fallback={null}>
-          <Lighting />
-          <RealisticGrassField />
+          <Lighting environment={adminSettings.environment} />
+          <LipsGrassField environment={adminSettings.environment} />
           
           {pigs.map((pig) => (
             <PigModel
               key={pig.id}
               pigState={pig}
               onClick={() => handlePigClick(pig.id)}
+              urlAssignment={urlAssignments[pig.id]}
+            />
+          ))}
+
+          {getVisibleModels().map((model) => (
+            <PlacedModelComponent
+              key={model.id}
+              model={model}
+              onClick={() => {}}
+              urlAssignment={urlAssignments[model.id]}
             />
           ))}
           
@@ -180,16 +217,26 @@ const Scene3D = ({ onLoaded }: Scene3DProps) => {
         </div>
       )}
 
-      {/* Admin Panel */}
-      <AdminPanel
-        isVisible={showAdminPanel}
-        onToggleVisibility={() => setShowAdminPanel(!showAdminPanel)}
-        pigCount={pigs.length}
-        onAddPig={handleAddPig}
-        onRemovePig={removePig}
-        onResetField={handleResetField}
-        pigs={pigs}
-      />
+      {/* Advanced Admin Panel - Only visible in admin mode */}
+      {adminSettings.isAdminMode && (
+        <AdvancedAdminPanel
+          isVisible={true}
+          adminSettings={adminSettings}
+          onUpdateSettings={updateAdminSettings}
+          pigCount={pigs.length}
+          onAddPig={handleAddPig}
+          onRemovePig={removePig}
+          onResetField={handleResetField}
+          pigs={pigs}
+          placedModels={placedModels}
+          onAddPlacedModel={addPlacedModel}
+          onUpdatePlacedModel={updatePlacedModel}
+          onRemovePlacedModel={removePlacedModel}
+          onAssignUrl={assignUrl}
+          onRemoveUrlAssignment={removeUrlAssignment}
+          urlAssignments={urlAssignments}
+        />
+      )}
     </div>
   );
 };

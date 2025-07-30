@@ -1,4 +1,4 @@
-import { Vector3, PigState } from '../types';
+import { Vector3, PigState, PlacedModel } from '../types';
 import { FIELD_BOUNDARIES, PIG_DEFAULTS } from './constants';
 import { 
   distance, 
@@ -10,6 +10,7 @@ import {
   createVector3,
   clamp
 } from './mathUtils';
+import { isPointInLipsField, getLipsFieldBoundaries } from '../components/LipsGrassField';
 
 export const generateRandomPigPersonality = () => ({
   restChance: randomInRange(0.05, 0.15),
@@ -34,7 +35,8 @@ export const createInitialPigState = (id: string, position?: Vector3): PigState 
   personality: generateRandomPigPersonality(),
   timers: {
     stateChange: Date.now() + randomInRange(2000, 8000),
-    lastDirection: Date.now()
+    lastDirection: Date.now(),
+    eatCooldown: 0
   }
 });
 
@@ -50,11 +52,23 @@ export const calculateWanderTarget = (pig: PigState): Vector3 => {
 };
 
 export const enforceFieldBoundaries = (position: Vector3): Vector3 => {
-  return {
-    x: clamp(position.x, FIELD_BOUNDARIES.minX + PIG_DEFAULTS.boundaryBuffer, FIELD_BOUNDARIES.maxX - PIG_DEFAULTS.boundaryBuffer),
+  const lipsBoundaries = getLipsFieldBoundaries();
+  
+  // First, clamp to basic boundaries
+  let clampedPosition = {
+    x: clamp(position.x, lipsBoundaries.minX + PIG_DEFAULTS.boundaryBuffer, lipsBoundaries.maxX - PIG_DEFAULTS.boundaryBuffer),
     y: position.y,
-    z: clamp(position.z, FIELD_BOUNDARIES.minZ + PIG_DEFAULTS.boundaryBuffer, FIELD_BOUNDARIES.maxZ - PIG_DEFAULTS.boundaryBuffer)
+    z: clamp(position.z, lipsBoundaries.minZ + PIG_DEFAULTS.boundaryBuffer, lipsBoundaries.maxZ - PIG_DEFAULTS.boundaryBuffer)
   };
+  
+  // Check if still within lips shape, if not, find nearest valid point
+  if (!isPointInLipsField(clampedPosition.x, clampedPosition.z)) {
+    // Simple approach: move towards center
+    const centerDirection = normalize(subtract(createVector3(0, 0, 0), clampedPosition));
+    clampedPosition = add(clampedPosition, multiply(centerDirection, 2));
+  }
+  
+  return clampedPosition;
 };
 
 export const calculateAvoidanceVector = (pig: PigState, otherPigs: PigState[]): Vector3 => {
@@ -83,14 +97,59 @@ export const calculateSeekVector = (pig: PigState, target: Vector3): Vector3 => 
   return multiply(normalize(direction), pig.speed);
 };
 
-export const updatePigAI = (pig: PigState, otherPigs: PigState[], deltaTime: number): PigState => {
+export const calculateAttractionVector = (pig: PigState, attractiveModels: PlacedModel[]): Vector3 => {
+  let attractionVector = createVector3();
+  
+  for (const model of attractiveModels) {
+    const dist = distance(pig.position, model.position);
+    if (dist < 20 && model.attractiveness > 0) {
+      const attractDirection = normalize(subtract(model.position, pig.position));
+      const force = (model.attractiveness / 100) * (20 - dist) / 20;
+      attractionVector = add(attractionVector, multiply(attractDirection, force));
+    }
+  }
+  
+  return multiply(attractionVector, 0.3);
+};
+
+export const checkFoodInteraction = (pig: PigState, foodModels: PlacedModel[]): { foundFood: boolean; foodModel?: PlacedModel } => {
+  const now = Date.now();
+  
+  // Check eating cooldown
+  if (now < pig.timers.eatCooldown) {
+    return { foundFood: false };
+  }
+  
+  for (const model of foodModels) {
+    const dist = distance(pig.position, model.position);
+    if (dist < 1.5) {
+      return { foundFood: true, foodModel: model };
+    }
+  }
+  
+  return { foundFood: false };
+};
+
+export const updatePigAI = (pig: PigState, otherPigs: PigState[], deltaTime: number, attractiveModels: PlacedModel[] = [], foodModels: PlacedModel[] = []): PigState => {
   const now = Date.now();
   let newState = { ...pig };
+
+  // Check for food interaction first
+  const foodInteraction = checkFoodInteraction(pig, foodModels);
+  if (foodInteraction.foundFood && pig.state !== 'eating') {
+    newState.state = 'eating';
+    newState.timers.stateChange = now + randomInRange(2000, 4000);
+    newState.timers.eatCooldown = now + 10000; // 10 second cooldown
+  }
 
   // State transitions
   if (now > pig.timers.stateChange) {
     const rand = Math.random();
-    if (pig.state === 'wandering' && rand < pig.personality.restChance) {
+    if (pig.state === 'eating') {
+      newState.state = 'wandering';
+      newState.target = calculateWanderTarget(pig);
+      newState.timers.stateChange = now + randomInRange(5000, 15000);
+    } else if (pig.state === 'wandering' && rand < pig.personality.restChance) {
       newState.state = 'resting';
       newState.timers.stateChange = now + randomInRange(3000, 8000);
     } else if (pig.state === 'resting' && rand < 0.7) {
@@ -110,9 +169,10 @@ export const updatePigAI = (pig: PigState, otherPigs: PigState[], deltaTime: num
   if (pig.state === 'wandering') {
     const seekForce = calculateSeekVector(pig, pig.target);
     const avoidanceForce = calculateAvoidanceVector(pig, otherPigs);
+    const attractionForce = calculateAttractionVector(pig, attractiveModels);
     
     // Combine forces
-    newState.velocity = add(seekForce, avoidanceForce);
+    newState.velocity = add(add(seekForce, avoidanceForce), attractionForce);
     
     // Apply movement
     const newPosition = add(pig.position, multiply(newState.velocity, deltaTime));
@@ -122,6 +182,9 @@ export const updatePigAI = (pig: PigState, otherPigs: PigState[], deltaTime: num
     if (newState.velocity.x !== 0 || newState.velocity.z !== 0) {
       newState.rotation.y = Math.atan2(newState.velocity.x, newState.velocity.z);
     }
+  } else if (pig.state === 'eating') {
+    // Eating - no movement
+    newState.velocity = multiply(newState.velocity, 0.1);
   } else {
     // Resting - minimal movement
     newState.velocity = multiply(newState.velocity, 0.9);
